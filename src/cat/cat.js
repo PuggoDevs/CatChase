@@ -124,7 +124,10 @@ export class Cat {
       vents: opts.vents ?? false,
       ventCost: 0.6,
     };
-    const path = this.nav.findPath(this.floor, this.pos.x, this.pos.z, f, x, z, pathOpts);
+    let path = this.nav.findPath(this.floor, this.pos.x, this.pos.z, f, x, z, pathOpts);
+    // shut in? the walls are full of ducts, and on hard nights doors give way
+    if ((!path || !path.length) && !pathOpts.vents) path = this.nav.findPath(this.floor, this.pos.x, this.pos.z, f, x, z, { ...pathOpts, vents: true });
+    if ((!path || !path.length) && !pathOpts.breakDoors && d.doorBreak > 0) path = this.nav.findPath(this.floor, this.pos.x, this.pos.z, f, x, z, { ...pathOpts, vents: true, breakDoors: true });
     if (!path || !path.length) { this.path = null; return false; }
     this.path = path;
     this.pathI = 0;
@@ -402,6 +405,9 @@ export class Cat {
           // it knows where the throw came from
           this._investigate(n.floor, n.from.x, n.from.z, true, 'sawThrough');
           this.game.onCatSeesThrough();
+        } else if (this.rng.chance(0.5)) {
+          // not fooled, and it wants you to know
+          this.game.audio.catVocal('laugh', this.headPos(new THREE.Vector3()));
         }
         return;
       }

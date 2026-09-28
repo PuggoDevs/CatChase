@@ -371,12 +371,12 @@ export class HouseGrid {
       const door = edge.door;
       if (!door) return { ok: false };
       if (door.isPassable()) return { ok: true, cost: 1 };
-      if (opts.doors === 'open') return { ok: false };
-      if (!door.canBeOpenedBy(opts)) {
-        if (opts.breakDoors && door.breakable) return { ok: true, cost: 14 };
-        return { ok: false };
-      }
-      return { ok: true, cost: door.barricade > 0 ? 10 : 2 };
+      if (opts.doors === 'open' || door.jammed) return { ok: false };
+      if (door.locked) return opts.breakDoors && door.breakable ? { ok: true, cost: 14 } : { ok: false };
+      // barricades only slow the cat down: it will batter its way through
+      if (door.barricade > 0) return opts.cat ? { ok: true, cost: 9 } : { ok: false };
+      if (!door.canBeOpenedBy(opts)) return { ok: false };
+      return { ok: true, cost: 2 };
     }
     return { ok: true, cost: 1 };
   }

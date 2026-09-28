@@ -212,6 +212,123 @@ await scenario('endless', 'autostart=hard&mode=endless&fixeddt=1&seed=ENDLESS', 
   return { ok: info.wave >= 1, info };
 });
 
+
+await scenario('distraction', `${base}&seed=THROW`, async (page) => {
+  const info = await page.evaluate(() => {
+    const g = window.__game;
+    const p = g.player;
+    g.director.phase = 'buildup';
+    p.pos.set(14.5, 3.2, 9.5); p.floor = 2; p.yaw = -Math.PI / 2; p.pitch = 0;
+    g.cat.teleport(2, 22.5, 4.5, 0); // guest bedroom
+    g.cat.setState('patrol');
+    g.stepSim(0.1);
+    const out = [];
+    const heard = [];
+    const orig = g.cat.hear.bind(g.cat);
+    g.cat.hear = (n) => { heard.push(n.kind + ':' + n.radius.toFixed(0)); orig(n); };
+    for (let k = 0; k < 5; k++) {
+      p.held = { kind: 'bottle', def: { name: 'Bottle', noise: 17, breaks: true } };
+      const susNow = g.cat.learn.distractionSuspicion(g.time, g.run.diff);
+      g.throwables.throwHeld();
+      const fl = g.throwables.flying.length;
+      g.stepSim(2);
+      if (k === 0) window.__dbg = { fl, heard: [...heard], flying: g.throwables.flying.length };
+      const st = g.cat.state;
+      out.push(st.name + (st.data && st.data.kind ? ':' + st.data.kind : '') + '@' + susNow.toFixed(2));
+      g.cat.teleport(2, 22.5, 4.5, 0);
+      g.cat.setState('patrol');
+      g.cat.learn.recordFooled(g.time);
+      p.pos.set(14.5, 3.2, 9.5); p.yaw = -Math.PI / 2;
+      g.stepSim(0.1);
+    }
+    // fooled over and over: now it must never fall for a throw again
+    for (let k = 0; k < 6; k++) g.cat.learn.recordFooled(g.time);
+    const wise = [];
+    for (let k = 0; k < 6; k++) {
+      p.held = { kind: 'bottle', def: { name: 'Bottle', noise: 17, breaks: true } };
+      g.throwables.throwHeld();
+      g.stepSim(2);
+      const st = g.cat.state;
+      wise.push(st.name + (st.data && st.data.kind ? ':' + st.data.kind : ''));
+      g.cat.teleport(2, 22.5, 4.5, 0);
+      g.cat.setState('patrol');
+      p.pos.set(14.5, 3.2, 9.5); p.yaw = -Math.PI / 2;
+      g.stepSim(0.1);
+    }
+    return { out, wise, fooled: g.cat.learn.fooled.length, suspicion: g.cat.learn.distractionSuspicion(g.time, g.run.diff).toFixed(2) };
+  });
+  return { ok: info.out[0].startsWith('investigate') && !info.wise.some((s) => s === 'investigate:distraction'), info };
+});
+
+await scenario('barricade', 'autostart=hard&skipintro=1&fixeddt=1&seed=BARR', async (page) => {
+  const info = await page.evaluate(() => {
+    const g = window.__game;
+    const p = g.player;
+    g.director.phase = 'buildup';
+    // we are in the guest bedroom; barricade its door and let the cat come
+    const d = g.world.doors.get('guest_door');
+    d.open = d.target = 0; d.update(0.1); d.updateCollider();
+    d.addBarricade(1);
+    p.pos.set(21.5, 3.2, 4); p.floor = 2;
+    g.cat.teleport(2, 21.5, 10.3, Math.PI);
+    g.cat._startChase();
+    const trace = [];
+    for (let i = 0; i < 40 && g.state === 'playing'; i++) { g.stepSim(0.5); trace.push(g.cat.state.name + '/' + d.barricade + (d.broken ? 'B' : '')); }
+    return { barricadeLeft: d.barricade, broken: d.broken, trace: [...new Set(trace)].slice(0, 12), state: g.state };
+  });
+  return { ok: info.barricadeLeft === 0, info };
+});
+
+await scenario('vent', `${base}&seed=VENT`, async (page) => {
+  const info = await page.evaluate(() => {
+    const g = window.__game;
+    const cat = g.cat;
+    g.director.phase = 'buildup';
+    // kitchen vent -> upper hallway vent
+    const a = g.world.vents.find((v) => v.id === 'v_kitchen');
+    cat.teleport(1, a.mouth.x, a.mouth.z, 0);
+    cat.setState('patrol', { target: { f: 2, x: 30.5, z: 9.5 }, room: g.world.grid.roomByKey['2u'], lingers: 0, wait: 99 });
+    const ok = cat.goTo(2, 30.5, 9.5, { speed: 2, vents: true, ventCost: 0.05 });
+    const modes = [];
+    for (let i = 0; i < 40; i++) { g.stepSim(0.4); modes.push(cat.mode + '@' + cat.floor); }
+    return { ok, usesVent: cat.path ? cat.path.usesVent : 'arrived', modes: [...new Set(modes)], end: [cat.pos.x.toFixed(1), cat.pos.z.toFixed(1), cat.floor] };
+  });
+  return { ok: info.modes.some((m) => m.startsWith('vent')), info };
+});
+
+await scenario('stare', `${base}&seed=STARE`, async (page) => {
+  const info = await page.evaluate(() => {
+    const g = window.__game;
+    const p = g.player;
+    g.director.phase = 'buildup';
+    p.pos.set(10.5, 3.2, 9.5); p.floor = 2; p.yaw = -Math.PI / 2; p.pitch = 0;
+    g.stepSim(0.2);
+    const ran = g.director.trigger('stare');
+    g.stepSim(0.5);
+    return { ran: !!ran, state: g.cat.state.name, visible: g.cat.visibleToPlayer, pos: [g.cat.pos.x.toFixed(1), g.cat.pos.z.toFixed(1)] };
+  });
+  await page.waitForFunction(() => window.__frames > 8, null, { timeout: 60000 });
+  await page.screenshot({ path: 'screenshots/p_stare.png' });
+  return { ok: info.ran && info.state === 'stare', info };
+});
+
+await scenario('outage', `${base}&seed=POWER&nocat=1`, async (page) => {
+  const info = await page.evaluate(() => {
+    const g = window.__game;
+    g.director.powerOutage();
+    g.stepSim(1);
+    const off = !g.world.lighting.power;
+    g.objectives.s.fuseBlown = false;
+    const fb = g.world.interactables.find((i) => i.kind === 'fusebox');
+    g.objectives.use({ kind: 'fusebox', it: fb, pos: fb.pos }, g.interaction);
+    g.interaction.hold && g.interaction.hold.onComplete();
+    g.interaction.hold = null;
+    g.stepSim(1);
+    return { wentOff: off, restored: g.world.lighting.power };
+  });
+  return { ok: info.wentOff && info.restored, info };
+});
+
 await browser.close();
 await server.close();
 console.log(failures ? `\n${failures} scenario(s) failed` : '\nall scenarios passed');
