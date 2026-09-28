@@ -1,0 +1,7 @@
+.godot/
+export_presets.cfg
+# textures Godot extracts from the .glb models on import (regenerated automatically)
+models/*_[0-9]*.png
+models/*_[0-9]*.png.import
+models/*_[0-9]*.jpg
+models/*_[0-9]*.jpg.import

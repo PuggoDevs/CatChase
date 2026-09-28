@@ -1,0 +1,27 @@
+; Engine configuration file.
+; Open this folder in Godot 4.2 or newer (Project Manager > Import > project.godot).
+
+config_version=5
+
+[application]
+
+config/name="The Cat's House"
+config/description="First-person survival horror: escape the house before the cat finds you."
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.2", "Forward Plus")
+config/icon="res://icon.svg"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+
+[physics]
+
+common/physics_ticks_per_second=60
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+lights_and_shadows/positional_shadow/atlas_size=4096
+environment/defaults/default_clear_color=Color(0, 0, 0, 1)

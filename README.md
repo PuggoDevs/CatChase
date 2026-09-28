@@ -7,6 +7,13 @@ wide, it learns how you play, and it does not want you to leave.
 
 There is one goal: **survive and get out.**
 
+## Godot version
+
+A Godot 4 port lives in [`godot/`](godot/README.md). It has the same house,
+your own 3D model for the cat, and the core of the game: sneaking, hiding,
+doors, the hunting cat and escaping through the front door. Open
+`godot/project.godot` in Godot 4.2 or newer and press F5.
+
 ## Running it
 
 Requires Node 20.19+ (or 22.12+) and a browser with WebGL 2.
