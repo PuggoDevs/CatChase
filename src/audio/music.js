@@ -148,7 +148,6 @@ export class Music {
   }
 
   _drums(t, k) {
-    const ctx = this.ctx;
     const bpm = 152;
     const beat = 60 / bpm / 2; // eighth notes
     const pattern = [1, 0, 0.5, 0, 1, 0.6, 0, 0.4, 1, 0, 0.5, 0.3, 1, 0.6, 0.8, 0.9];
@@ -160,7 +159,6 @@ export class Music {
       this.nextBeat += beat;
       this.beatIndex++;
     }
-    void ctx;
   }
 
   _drum(when, v) {

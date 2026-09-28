@@ -42,7 +42,7 @@ export function createCatModel(materials, opts = {}) {
   const pink = mk({ color: 0x5a2a2e, roughness: 0.8 }, 'catPink');
   const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 2.4, 0.55) });
   const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-  const mats = { fur, whiteFur, glove, dark, mouthMat, teethMat, clawMat, red, white, pink, eyeMat };
+  const mats = { fur, whiteFur, glove, dark, mouthMat, teethMat, clawMat, red, white, pink, eyeMat, pupilMat };
 
   const root = new THREE.Group();
   root.name = 'cat';
@@ -250,6 +250,67 @@ export function createCatModel(materials, opts = {}) {
   return {
     root, body, hips, spine, chest, neck, head, hat, bow, arms, legs, tail, eyes, glows, grin, mats,
     allMaterials: [fur, whiteFur, glove, dark, mouthMat, teethMat, clawMat, red, white, pink],
+  };
+}
+
+/**
+ * Just the eyes and the grin, for when the rest of it is hidden in the dark
+ * under a bed. Shares the body's materials so it is lit (and fades) the same.
+ */
+export function createLurkFace(model) {
+  const { eyeMat, pupilMat, mouthMat, teethMat, fur, whiteFur, pink } = model.mats;
+  const root = new THREE.Group();
+  root.name = 'catLurkFace';
+  root.visible = false;
+  const head = new THREE.Group(); // tilted as if the chin rests on the floor
+  root.add(head);
+  // the head itself, only there when the light finds it
+  const skull = sphere(0.2, fur, 1.13, 0.94, 1.0, 20);
+  skull.position.set(0, 0.05, 0);
+  const cheeks = sphere(0.16, fur, 1.35, 0.7, 0.9);
+  cheeks.position.set(0, -0.03, 0.03);
+  const muzzle = sphere(0.085, whiteFur, 1.35, 0.78, 0.85);
+  muzzle.position.set(0, -0.02, 0.165);
+  const nose = sphere(0.022, pink, 1.3, 0.8, 0.8);
+  nose.position.set(0, 0.018, 0.235);
+  head.add(skull, cheeks, muzzle, nose);
+  for (const s of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.22, 4), fur);
+    ear.position.set(s * 0.14, 0.2, -0.02);
+    ear.rotation.set(-0.1, s * 0.3, -s * 0.38);
+    ear.scale.set(1, 1, 0.45);
+    head.add(ear);
+  }
+  const eyes = [];
+  const glows = [];
+  for (const s of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.052, 14, 10), eyeMat);
+    eye.scale.set(1, 1.28, 0.55);
+    eye.position.set(s * 0.086, 0.075, 0.165);
+    eye.rotation.z = s * -0.18;
+    head.add(eye);
+    const pupil = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.085, 0.01), pupilMat);
+    pupil.position.set(s * 0.086, 0.075, 0.195);
+    pupil.rotation.z = s * -0.18;
+    head.add(pupil);
+    eyes.push({ eye, pupil });
+    const sp = new THREE.Sprite(model.glows[0].material.clone());
+    sp.scale.setScalar(0.2);
+    sp.position.set(s * 0.086, 0.075, 0.2);
+    head.add(sp);
+    glows.push(sp);
+  }
+  const grin = buildGrin(mouthMat, teethMat);
+  grin.group.position.set(0, -0.045, 0);
+  grin.set(1.3, 0);
+  head.add(grin.group);
+  return {
+    root, head, eyes, glows, grin,
+    /** 0 = eyes shut, 1 = wide open; glow scales the halo (lower up close). */
+    blink(k, glow = 1) {
+      for (const e of eyes) { e.eye.scale.y = 1.28 * Math.max(0.05, k); e.pupil.scale.y = Math.max(0.05, k); }
+      for (const g of glows) g.material.opacity = 0.55 * k * glow;
+    },
   };
 }
 

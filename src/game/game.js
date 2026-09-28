@@ -513,7 +513,6 @@ export class Game {
   learn(kind, data) {
     const L = this.cat.learn;
     if (kind === 'lock' || kind === 'barricade') L.recordLock();
-    void data;
   }
 
   // ================================================================ event hooks
@@ -574,8 +573,10 @@ export class Game {
     this.ui.setPrompt(null);
     this.story.open && this.story.closeNote();
     this.ui.hideJournal();
-    if (p.hiding && kind !== 'hide') p.hiding = null;
-    if (kind !== 'hide' && this.run.strugglesLeft > 0) {
+    // caught inside a hiding place: no struggling free from there
+    const cornered = kind === 'hide' || kind === 'under';
+    if (p.hiding && !cornered) p.hiding = null;
+    if (!cornered && this.run.strugglesLeft > 0) {
       this.cutscenes.struggle(() => {
         this.run.strugglesLeft--;
         this.cat.recoil();
@@ -593,6 +594,7 @@ export class Game {
     const p = this.player;
     p.dead = true;
     p.flash.on = false;
+    this.ui.setHUD(false);
     this.cutscenes.death(kind, spot, (line) => {
       this.progress.deaths = (this.progress.deaths || 0) + 1;
       const run = this.run;
@@ -625,9 +627,8 @@ export class Game {
 
   onDoorUnlocked() {}
 
-  onSecretFound(door) {
+  onSecretFound() {
     this.stats.secrets = (this.stats.secrets || 0) + 1;
-    void door;
   }
 
   onDocumentRead(doc) {
@@ -659,7 +660,6 @@ export class Game {
   }
 
   _ending(route) {
-    const run = this.run;
     const e = ENDINGS[route];
     const had = this.progress.endings[route];
     this.progress.endings[route] = (had || 0) + 1;
@@ -669,7 +669,6 @@ export class Game {
     if (this.audio.ready) this.audio.stopAllLoops();
     this.post.u.uBlack.value = 1;
     this.ui.showEnding({ title: e.title, text: e.text, kicker: route === 'secret' ? 'SECRET ENDING' : 'YOU ESCAPED', secret: route === 'secret', stats: this._stats(), unlocked: !had });
-    void run;
   }
 
   startSecretEnding(inter) {

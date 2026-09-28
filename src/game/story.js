@@ -357,7 +357,6 @@ export class Story {
       this.game.onDocumentRead(doc);
     }
     this.fromJournal = fromJournal;
-    void it;
   }
 
   closeNote() {

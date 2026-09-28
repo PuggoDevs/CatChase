@@ -157,7 +157,7 @@ export class FurnitureContext {
 
   interact(spec) {
     const p = spec.pos ? this.wv(spec.pos[0], spec.pos[1], spec.pos[2]) : this.wv(0, 1, 0);
-    const it = { id: spec.id || this.id, f: this.f, room: this.room.index, pos: p, radius: spec.radius ?? 0.6, ...spec, pos: p };
+    const it = { id: spec.id || this.id, f: this.f, room: this.room.index, radius: spec.radius ?? 0.6, ...spec, pos: p };
     this.world.interactables.push(it);
     return it;
   }
@@ -925,13 +925,11 @@ B.displayCase = (c, o) => {
   for (const sx of [-1, 1]) c.box('woodFurnitureDark', sx * (W / 2 - 0.02), 1.4, 0, 0.04, 1.1, 0.45);
   c.box('glass', 0, 1.4, 0.22, W - 0.06, 1.08, 0.01, { faces: 'Z' });
   // top hats on display (a collection of striped hats...)
-  const rng = c.world.decorRng;
   for (let i = 0; i < 3; i++) {
     const x = -W / 3 + i * (W / 3);
     c.cyl('black', x, 0.9, 0, 0.12, 0.12, 0.02, 12);
     for (let s = 0; s < 4; s++) c.cyl(s % 2 ? 'ivory' : 'paintRed', x, 0.95 + s * 0.06, 0, 0.075, 0.075, 0.06, 12);
     c.cyl('black', x, 1.52, 0, 0.004, 0.004, 0.001, 3);
-    void rng;
   }
   c.box('woodFurnitureDark', 0, 1.35, 0, W - 0.06, 0.02, 0.4);
   for (let i = 0; i < 4; i++) c.sphere('doll', -W / 3 + i * (W / 4.5), 1.42, 0.02, 0.05);

@@ -1,12 +1,13 @@
 // The cat's body and brain.
 //
 // Brain states: dormant, patrol, investigate, stalk, chase, search, check,
-// ambush, stare, fakeLeave, doorBlocked, attack, recoil, lured, scripted.
+// ambush (in a doorway, on the ceiling or under a bed), stare, fakeLeave,
+// doorBlocked, attack, recoil, lured, scripted.
 // Locomotion: path following across floors, doors (quiet / normal / burst),
 // barricades and locks, vents (hidden travel with scratching in the walls)
 // and ceiling crawling.
 import * as THREE from 'three';
-import { createCatModel } from './catModel.js';
+import { createCatModel, createLurkFace } from './catModel.js';
 import { CatAnimator } from './catAnimator.js';
 import { NavGraph } from './nav.js';
 import { PlayerModel } from './learning.js';
@@ -26,6 +27,8 @@ export class Cat {
     this.anim = new CatAnimator(this.model);
     this.model.root.visible = false;
     game.scene.add(this.model.root);
+    this.face = createLurkFace(this.model);
+    game.scene.add(this.face.root);
     this.pos = new THREE.Vector3();
     this.yaw = 0;
     this.floor = 1;
@@ -67,6 +70,8 @@ export class Cat {
     this.relaxing = false;
     this.mood = 1;             // outage multiplier
     this.model.root.visible = false;
+    this.lurkSpot = null;
+    this.face.root.visible = false;
     this.learn = new PlayerModel(run ? run.diff.learnRate : 1);
     this.lastPlayerPos = new THREE.Vector3();
     this.playerVel = new THREE.Vector3();
@@ -90,12 +95,14 @@ export class Cat {
 
   setState(name, data = {}) {
     const prev = this.state.name;
+    if (this.lurkSpot) this._unlurk();
     this.state = { name, t: 0, data, prev };
     this.game.onCatState(name, prev);
   }
 
   /** Put the cat somewhere (only while the player can't see). */
   teleport(f, x, z, yaw = null) {
+    if (this.lurkSpot) this._unlurk();
     this.floor = f;
     this.pos.set(x, this.grid.groundY(f, x, z), z);
     if (yaw !== null) this.yaw = yaw;
@@ -107,6 +114,7 @@ export class Cat {
   }
 
   hide() {
+    if (this.lurkSpot) this._unlurk();
     this.mode = 'hidden';
     this.model.root.visible = false;
     this.path = null;
@@ -325,7 +333,7 @@ export class Cat {
     // track the player's velocity for prediction
     this.playerVel.subVectors(p.pos, this.lastPlayerPos).divideScalar(Math.max(dt, 1e-3));
     this.lastPlayerPos.copy(p.pos);
-    if (this.hidden || this.state.name === 'attack' || p.dead) { this.seesPlayer = false; return; }
+    if (this.hidden || this.lurkSpot || this.state.name === 'attack' || p.dead) { this.seesPlayer = false; return; }
     const eye = this.headPos(tmp);
     const vis = this._visibility(eye);
     this.seesPlayer = vis > 0;
@@ -426,6 +434,11 @@ export class Cat {
       if (!this.seesPlayer && strength > 0.2) this.lastSeen = { pos: n.pos.clone(), time: this.now, vel: new THREE.Vector3(), floor: n.floor };
       return;
     }
+    if (this.lurkSpot) {
+      // something right next to its bed: out it comes
+      if (strength > 0.6 && this.distTo(n.pos) < 4) this._burstFromUnder(n);
+      return;
+    }
     if (st === 'stare' || st === 'ambush') {
       if (strength > 0.5 && this.distTo(n.pos) < 8) this._investigate(n.floor, n.pos.x, n.pos.z, true, n.kind);
       return;
@@ -489,7 +502,6 @@ export class Cat {
 
   _think(dt) {
     const s = this.state;
-    const d = this.diff;
     const p = this.player;
     // universal: detection -> chase (unless busy with something special)
     const busy = ['attack', 'recoil', 'lured', 'scripted', 'dormant', 'check'].includes(s.name);
@@ -885,13 +897,15 @@ export class Cat {
       room = fav.length ? this.rng.pick(fav) : null;
     }
     if (!room || room === p.room) return;
-    // wait next to a door into that room, or on its ceiling
-    const pt = this.nav.randomPointInRoom(room, this.rng);
-    if (!pt) return;
+    // wait on its ceiling, under one of its beds, or low in a corner
+    const beds = this.world.hidingSpots.filter((h) => h.type === 'bed' && h.room === room.index && !(p.hiding && p.hiding.spot === h));
     const ceiling = this.rng.chance(0.35 + d.deception * 0.3);
+    const under = !ceiling && beds.length && this.rng.chance(0.6) ? this.rng.pick(beds) : null;
+    const pt = under ? { f: under.f, x: under.exit.x, z: under.exit.z } : this.nav.randomPointInRoom(room, this.rng);
+    if (!pt) return;
     if (!this.goTo(pt.f, pt.x, pt.z, { speed: d.catWalk * 1.5, pose: 'crawl', doorMode: 'quiet', vents: this.rng.chance(d.ventUse) })) return;
     this.stats.ambushes++;
-    this.setState('ambush', { room, ceiling, wait: this.rng.float(25, 45), lurking: false });
+    this.setState('ambush', { room, ceiling, under, wait: this.rng.float(25, 45), lurking: false });
     this.silentUntil = this.now + 60;
   }
 
@@ -902,7 +916,13 @@ export class Cat {
     if (!s.data.lurking) {
       s.data.lurking = true;
       if (s.data.ceiling) this.mode = 'ceiling';
+      if (s.data.under) {
+        // someone got into that bed while it was on its way
+        if (p.hiding && p.hiding.spot === s.data.under) { this._startCheck(s.data.under, {}); return; }
+        this._slideUnder(s.data.under);
+      }
     }
+    if (this.lurkSpot) { this._stLurkUnder(dt); return; }
     this.anim.setPose(this.mode === 'ceiling' ? 'crawl' : 'lookUnder', 0.5);
     this.anim.headLookYaw = 0;
     s.data.wait -= dt;
@@ -915,6 +935,103 @@ export class Cat {
       return;
     }
     if (s.data.wait <= 0) { this.mode = 'floor'; this.setState('patrol'); }
+  }
+
+  // ---------------------------------------------------------------- under the bed
+  _slideUnder(spot) {
+    this.stop();
+    this.lurkSpot = spot;
+    this.detection = 0;
+    this.model.root.visible = false;
+    const out = tmp.copy(spot.exit).sub(spot.inside).setY(0).normalize();
+    // the face rests just inside the bed's edge, chin on the floorboards
+    const f = this.face.root;
+    f.position.copy(spot.exit).addScaledVector(out, -0.8);
+    f.position.y = this.grid.groundY(spot.f, f.position.x, f.position.z) + 0.1;
+    this.lurkYaw = Math.atan2(out.x, out.z);
+    f.rotation.set(0, this.lurkYaw, 0);
+    this.face.head.rotation.set(0.12, 0, 0);
+    this.face.blink(1);
+    f.visible = true;
+    this.lurkWatched = 0;
+    this.purrT = this.rng.float(2, 5);
+    this.blinkT = this.rng.float(2, 6);
+    this.game.audio.hideSound('bed', spot.inside, false);
+  }
+
+  _unlurk() {
+    this.lurkSpot = null;
+    this.face.root.visible = false;
+    this.face.blink(1);
+    this.model.root.visible = this.mode !== 'hidden';
+  }
+
+  _stLurkUnder(dt) {
+    const s = this.state;
+    const p = this.player;
+    const d = this.diff;
+    const spot = this.lurkSpot;
+    const face = this.face.root;
+    // you crawled under *this* bed
+    if (p.hiding && p.hiding.spot === spot) { this._startAttack('under', spot); return; }
+    const dist = Math.hypot(p.pos.x - face.position.x, p.pos.z - face.position.z) + Math.abs(p.pos.y - this.pos.y) * 2;
+    // the eyes follow you across the room
+    const toP = Math.atan2(p.pos.x - face.position.x, p.pos.z - face.position.z);
+    let rel = toP - this.lurkYaw;
+    while (rel > Math.PI) rel -= Math.PI * 2;
+    while (rel < -Math.PI) rel += Math.PI * 2;
+    const want = this.lurkYaw + Math.max(-0.8, Math.min(0.8, rel));
+    face.rotation.y = turnToward(face.rotation.y, want, dt * 1.2);
+    // slow blinks
+    this.blinkT -= dt;
+    if (this.blinkT < 0) {
+      const b = -this.blinkT;
+      this.face.blink(b < 0.25 ? 1 - b / 0.25 : Math.min(1, (b - 0.25) / 0.3));
+      if (b > 0.6) { this.blinkT = this.rng.float(3, 8); this.face.blink(1); }
+    }
+    // being looked at: eyes on screen, near the middle, lit or close
+    const eyes = tmp2.set(face.position.x, face.position.y + 0.08, face.position.z);
+    let looked = false;
+    if (p.floor === this.floor && dist < 12 && this.game.canPlayerSee(eyes, 0)) {
+      const cam = this.game.camera;
+      const fwd = tmp.set(0, 0, -1).applyQuaternion(cam.quaternion);
+      const to = eyes.clone().sub(cam.position).normalize();
+      const centred = to.dot(fwd);
+      const lit = p.flash.on && to.dot(p.flash.dir) > 0.93;
+      looked = centred > 0.93 && (lit || dist < 4.5);
+    }
+    this.lurkWatched = looked ? this.lurkWatched + dt : Math.max(0, this.lurkWatched - dt * 0.5);
+    // you're right there, or you've been staring into its eyes too long
+    if (!p.hiding && p.floor === this.floor && (dist < 1.9 || this.lurkWatched > 0.6 + (1 - d.deception) * 0.6)) { this._burstFromUnder(); return; }
+    // a fair warning, most nights
+    this.purrT -= dt;
+    if (this.purrT <= 0) {
+      this.purrT = this.rng.float(4, 8);
+      if (dist < 5 && this.rng.chance(1 - d.deception * 0.7)) this.game.audio.catVocal('purr', eyes.clone());
+    }
+    s.data.wait -= dt;
+    if (s.data.wait <= 0) {
+      // only slip away when nobody is watching the bed
+      if (this.game.canPlayerSee(eyes, 0.2)) { s.data.wait = 2; return; }
+      this.setState('patrol');
+    }
+  }
+
+  _burstFromUnder(noise = null) {
+    const spot = this.lurkSpot;
+    const p = this.player;
+    this._unlurk();
+    this.pos.set(spot.exit.x, this.grid.groundY(spot.f, spot.exit.x, spot.exit.z), spot.exit.z);
+    this.yaw = Math.atan2(p.pos.x - this.pos.x, p.pos.z - this.pos.z);
+    this.anim.setPose('crawl', 0.05);
+    this.game.audio.hideSound('bed', spot.inside, true);
+    // a noise it came out for, with you nowhere near: go and see
+    if (noise && (this.distToPlayer() > 4 || p.floor !== this.floor)) {
+      this._investigate(noise.floor, noise.pos.x, noise.pos.z, true, noise.kind, 1, noise);
+      return;
+    }
+    this.game.onAmbush(false);
+    this._startChase(true);
   }
 
   // ---------------------------------------------------------------- stare

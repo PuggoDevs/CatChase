@@ -20,6 +20,7 @@ export const DEATH_LINES = {
   drag: ['It dragged you into the dark. Somewhere, a door closed.', 'The last thing you saw was the ceiling, sliding away.'],
   hide: ['It knew where you were hiding. It always knows.', 'The doors swung open. It was smiling.', 'Found you.'],
   bed: ['Its face appeared at the edge of the bed. Upside down. Smiling.'],
+  under: ['Something was already under the bed.', 'It had been lying there in the dark, smiling, the whole time.', 'You were never alone under there.'],
   ceiling: ['You never thought to look up.', 'It was on the ceiling the whole time.'],
   behind: ['It was behind you the whole time.', 'You felt something breathing on your neck.'],
 };
@@ -92,6 +93,7 @@ export class Cutscenes {
   chooseDeath(kind, spot) {
     const g = this.game;
     const cat = g.cat;
+    if (kind === 'under') return 'under';
     if (kind === 'hide') return spot && spot.type === 'bed' ? 'bed' : 'hide';
     if (cat.mode === 'ceiling' || cat.flip > 0.5) return 'ceiling';
     const fwd = V(0, 0, -1).applyQuaternion(this.cam.quaternion).setY(0).normalize();
@@ -221,7 +223,53 @@ export class Cutscenes {
             if (t > 1.7 && !this.crunched) { this.crunched = true; crunch(); }
             black(t > 1.7 ? 1 : 0);
           },
-          done0() { s.setOpen(0); },
+        };
+        break;
+      }
+      case 'under': {
+        // it was already under there, further in, with its eyes shut
+        const s = spot;
+        const out = s.exit.clone().sub(s.inside).setY(0).normalize();
+        const along = V(-out.z, 0, out.x); // down the length of the bed
+        const face = cat.face;
+        const fromQ = cam.quaternion.clone();
+        const facePos = s.inside.clone().addScaledVector(along, 0.8).addScaledVector(out, -0.2).setY(floorBaseY(s.f) + 0.1);
+        const faceYaw = Math.atan2(s.inside.x - facePos.x, s.inside.z - facePos.z);
+        scene = {
+          duration: 3.3,
+          start() {
+            cat.model.root.visible = false;
+            face.root.position.copy(facePos);
+            face.root.rotation.set(0, faceYaw, 0);
+            face.head.rotation.set(0.1, 0, 0.35);
+            face.grin.set(1.3, 0);
+            face.blink(0, 0.3);
+            face.root.visible = true;
+            g.audio.silence(1.5, 0.0);
+          },
+          update(t, dt) {
+            cam.position.copy(s.inside);
+            const head = face.root.position.clone().add(V(0, 0.06, 0));
+            cam.quaternion.copy(fromQ).slerp(lookQuat(s.inside, head), ease(clamp01((t - 0.7) / 1.1)));
+            if (t > 0.5 && !this.purred) { this.purred = true; g.audio.catVocal('purr', head); }
+            if (t > 1.6) face.blink(clamp01((t - 1.6) / 0.25), 0.3);
+            if (t > 2.1) {
+              if (!this.stung) { this.stung = true; g.audio.unsilence(); g.audio.stinger(1); }
+              const u = clamp01((t - 2.1) / 0.45);
+              face.grin.set(1.3 + u * 0.25, u * 1.25);
+              face.root.position.addScaledVector(along, -dt * u * 0.9);
+              g.player.addShake(0.08 * u, 0.2);
+              fx.uRed.value = u * 0.5;
+            }
+            if (t > 2.6 && !this.crunched) { this.crunched = true; crunch(); }
+            black(t > 2.6 ? 1 : 0);
+          },
+          cleanup() {
+            face.root.visible = false;
+            face.head.rotation.set(0.12, 0, 0);
+            face.grin.set(1.3, 0);
+            face.blink(1);
+          },
         };
         break;
       }
@@ -259,6 +307,7 @@ export class Cutscenes {
         return this.death('grab', spot, onDone);
     }
     scene.done = () => {
+      if (scene.cleanup) scene.cleanup();
       cat.anim.jawOverride = null;
       if (spot) spot.setOpen(0);
       fx.uRed.value = 0; fx.uDistort.value = 0;

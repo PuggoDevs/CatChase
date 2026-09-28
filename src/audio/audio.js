@@ -103,7 +103,6 @@ export class AudioEngine {
     src.loop = !!opts.loop;
     const gain = ctx.createGain();
     gain.gain.value = opts.volume ?? 1;
-    let out = gain;
     const bus = opts.bus === 'amb' ? this.ambBus : opts.bus === 'music' ? this.musicBus : this.sfx;
     let panner = null, lp = null;
     if (opts.pos) {
@@ -120,7 +119,6 @@ export class AudioEngine {
       lp.frequency.value = occ.cutoff;
       gain.gain.value *= occ.gain;
       src.connect(gain).connect(lp).connect(panner).connect(bus);
-      out = panner;
     } else {
       src.connect(gain).connect(bus);
     }
@@ -146,7 +144,6 @@ export class AudioEngine {
         lp.frequency.setTargetAtTime(occ.cutoff, ctx.currentTime, 0.1);
       },
     };
-    void out;
     return handle;
   }
 
@@ -189,7 +186,6 @@ export class AudioEngine {
   // ---------------------------------------------------------------- ambience
   _startAmbience() {
     // rain on the roof and windows, wind through the eaves
-    this.rain = this.play('water', { loop: true, bus: 'amb', volume: 0.0, rateJitter: 0, reverb: 0 });
     this._noiseLoop();
   }
 
@@ -230,10 +226,10 @@ export class AudioEngine {
     this.wind.f.frequency.setTargetAtTime(300 + 250 * Math.sin(g.time * 0.17), t, 0.8);
     this.houseHum.g.gain.setTargetAtTime(g.world.lighting.power ? 0.025 : 0.0, t, 0.3);
     if (this.music) this.music.update(dt, state);
-    this._updatePositionalLoops();
+    this._updatePositionalLoops(dt);
   }
 
-  _updatePositionalLoops() {
+  _updatePositionalLoops(dt) {
     // clocks, the fridge, the boiler, TVs: start when near, stop when far
     const g = this.game;
     const cam = g.camera.position;
@@ -249,8 +245,7 @@ export class AudioEngine {
           const h = { tick: 0, s, clock: true };
           this.loops.set(key, h);
         } else {
-          const name = s.kind === 'boiler' ? 'engine' : 'engine';
-          const h = this.play(name, { pos: s.pos, loop: true, volume: s.kind === 'boiler' ? 0.18 : 0.06, rate: s.kind === 'boiler' ? 0.5 : 1.4, rateJitter: 0, reverb: 0.1 });
+          const h = this.play('engine', { pos: s.pos, loop: true, volume: s.kind === 'boiler' ? 0.18 : 0.06, rate: s.kind === 'boiler' ? 0.5 : 1.4, rateJitter: 0, reverb: 0.1 });
           if (h) this.loops.set(key, h);
         }
       }
@@ -270,7 +265,7 @@ export class AudioEngine {
         if (h.stop) h.stop(0.2);
         this.loops.delete(key);
       } else if (h.clock) {
-        h.tick -= 1 / 60;
+        h.tick -= dt;
         if (h.tick <= 0) {
           h.tick = 1;
           this.play('click', { pos: h.s.pos, volume: 0.35, rate: 0.55, reverb: 0.3 });

@@ -121,6 +121,8 @@ await scenario('events', `${base}&seed=EVENTS&nocat=1`, async (page) => {
     const p = g.player;
     const results = {};
     const spots = [[2, 13.5, 9.5, -Math.PI / 2], [1, 13.5, 9.5, -Math.PI / 2], [1, 4.5, 11.5, Math.PI / 2], [2, 17.5, 5.5, -Math.PI / 2]];
+    // and the room with the television in it
+    for (const tv of g.world.tvs) { const r = g.world.grid.rooms[tv.room]; spots.push([r.floor, r.cx, r.cz, 0]); }
     const ids = ['flicker', 'tvOn', 'doorCreep', 'windowStare', 'lightningReveal', 'mirror', 'footstepsAbove', 'ceilingCrawl', 'fakeJumpscare', 'silentBehind', 'whispers', 'laughDistant', 'scratchWalls', 'musicBox', 'rockingChair', 'pianoPlays', 'objectFall'];
     for (const id of ids) {
       let ran = false;
@@ -135,7 +137,7 @@ await scenario('events', `${base}&seed=EVENTS&nocat=1`, async (page) => {
     }
     return results;
   });
-  return { info };
+  return { ok: Object.values(info).every(Boolean), info };
 });
 
 await scenario('escape-front', `${base}&seed=FRONT&nocat=1`, async (page) => {
@@ -258,6 +260,73 @@ await scenario('distraction', `${base}&seed=THROW`, async (page) => {
     return { out, wise, fooled: g.cat.learn.fooled.length, suspicion: g.cat.learn.distractionSuspicion(g.time, g.run.diff).toFixed(2) };
   });
   return { ok: info.out[0].startsWith('investigate') && !info.wise.some((s) => s === 'investigate:distraction'), info };
+});
+
+await scenario('underbed', `${base}&seed=UNDER`, async (page) => {
+  const info = await page.evaluate(() => {
+    const g = window.__game;
+    const p = g.player;
+    const c = g.cat;
+    g.director.phase = 'buildup';
+    const spot = g.world.hidingSpots.find((h) => h.type === 'bed' && h.roomKey === '2M');
+    const room = g.world.grid.rooms[spot.room];
+    const lurk = () => {
+      c.teleport(spot.f, spot.exit.x, spot.exit.z, 0);
+      c.detection = 0;
+      c.setState('ambush', { room, ceiling: false, under: spot, wait: 60, lurking: false });
+      g.stepSim(0.2);
+    };
+    const aim = (v) => {
+      const e = p.eyePos.clone();
+      p.yaw = Math.atan2(-(v.x - e.x), -(v.z - e.z));
+      p.pitch = Math.atan2(v.y - e.y, Math.hypot(v.x - e.x, v.z - e.z));
+    };
+    lurk();
+    const face = c.face.root.position.clone();
+    // somewhere in the room with a clear view of the bed, 2.5-7 m away
+    let stand = null;
+    for (let i = 0; i < 80 && !stand; i++) {
+      const pt = c.nav.randomPointInRoom(room, g.run.rng);
+      const d = pt && Math.hypot(pt.x - face.x, pt.z - face.z);
+      if (!pt || d < 2.5 || d > 7) continue;
+      p.pos.set(pt.x, g.world.grid.groundY(2, pt.x, pt.z), pt.z); p.floor = 2;
+      aim(face);
+      g.stepSim(0.05);
+      if (g.canPlayerSee(face.clone().setY(face.y + 0.08), 0)) stand = pt;
+    }
+    if (!stand) return { error: 'no view of the bed' };
+    // 1: in the dark, looking away, it just waits
+    p.flash.has = true; p.flash.on = false;
+    p.yaw += Math.PI; p.pitch = 0;
+    g.stepSim(3);
+    const waited = { state: c.state.name, lurking: !!c.lurkSpot, face: c.face.root.visible, body: c.model.root.visible };
+    // 2: the flashlight finds its eyes
+    p.flash.on = true;
+    aim(face);
+    let burst = null;
+    for (let i = 0; i < 40 && !burst; i++) {
+      g.stepSim(0.1);
+      if (c.state.name === 'chase') burst = { t: (i + 1) / 10, body: c.model.root.visible, face: c.face.root.visible };
+    }
+    // 3: crawl under the bed it's lying under
+    c.teleport(2, 3, 3, 0);
+    c.setState('patrol');
+    p.flash.on = false;
+    lurk();
+    let kind = null;
+    const orig = g.cutscenes.death.bind(g.cutscenes);
+    g.cutscenes.death = (k, s, done) => { kind = k; return orig(k, s, done); };
+    p.pos.copy(spot.entry); p.floor = 2;
+    p.enterHiding(spot);
+    g.stepSim(0.5);
+    const during = { state: g.state, face: c.face.root.visible };
+    g.stepSim(4);
+    return { stand: [stand.x.toFixed(1), stand.z.toFixed(1)], waited, burst, kind, during, end: g.state, faceAfter: c.face.root.visible };
+  });
+  const ok = !info.error && info.waited.lurking && info.waited.face && !info.waited.body
+    && info.burst && info.burst.body && !info.burst.face
+    && info.kind === 'under' && info.during.face && !info.faceAfter;
+  return { ok, info };
 });
 
 await scenario('barricade', 'autostart=hard&skipintro=1&fixeddt=1&seed=BARR', async (page) => {

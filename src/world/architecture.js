@@ -3,7 +3,7 @@
 // baseboards and wainscoting. Also emits the static physics colliders.
 import * as THREE from 'three';
 import { FLOOR_H, SLAB, WALL_T, EXT_WALL_T, DOOR_H, FLOOR_CEIL, floorBaseY } from './layout.js';
-import { OUTSIDE, HOLE } from './grid.js';
+import { HOLE } from './grid.js';
 import { mat4 } from './geo.js';
 
 const EXT_FLOOR = 9; // bucket id for always-visible exterior geometry
@@ -398,12 +398,7 @@ export class ArchitectureBuilder {
     // glass quads (both directions)
     const gm = style === 'frosted' ? 'frosted' : 'glass';
     const gx0 = jw + 0.05, gx1 = 1 - jw - 0.05;
-    for (const which of [1, 2]) {
-      const saved = e.exterior;
-      // use face() with a tiny thickness by temporarily computing positions
-      this.glassQuad(e, which, gx0, gx1, sill + 0.05, head - 0.05, gm, inside);
-      void saved;
-    }
+    for (const which of [1, 2]) this.glassQuad(e, which, gx0, gx1, sill + 0.05, head - 0.05, gm, inside);
     // exterior treatment
     const outOff = t / 2 + 0.03;
     const outSlot = this.grid.outsideLightSlot;

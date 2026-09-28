@@ -225,17 +225,20 @@ export class Door {
     // barricade planks (hidden until used), built on both sides
     this.barricadeGroups = {};
     for (const side of [1, 2]) {
-      const bg = new GeoBuilder(lib);
-      bg.floor = f;
       const slot = this._slotFor(side);
       const zs = side === minusZSide ? -1 : 1;
       const d = zs * (edgeThickness(this.edge) / 2 + 0.05);
       const planks = [[0.5, 1.45, 0.35], [0.5, 0.75, -0.3], [0.5, 1.1, 0.02]];
+      // one group per plank so they can fall away one at a time
+      const grp = new THREE.Group();
+      grp.name = 'barricade';
       planks.forEach(([cx, cy, rot], i) => {
+        const bg = new GeoBuilder(lib);
+        bg.floor = f;
         const m = new THREE.Matrix4().makeTranslation(cx * this.panelW, cy, d + zs * i * 0.012).multiply(new THREE.Matrix4().makeRotationZ(rot));
         bg.geometry('woodPlanks', new THREE.BoxGeometry(1.25, 0.16, 0.035), m, { room: slot });
+        grp.add(bg.buildGroup('plank' + i));
       });
-      const grp = bg.buildGroup('barricade');
       grp.visible = false;
       // barricade is attached to the frame, not to the swinging panel
       const holder = new THREE.Group();
@@ -388,12 +391,10 @@ export class Door {
       const b = this.barricadeGroups[side];
       b.grp.visible = this.barricade > 0 && side === this.barricadeSide;
       if (b.grp.visible) {
-        // show fewer planks as it breaks
-        const kids = b.grp.children;
-        b.grp.scale.setScalar(1);
-        b.grp.position.y = 0;
+        // planks come away one by one as it batters through, the rest knocked askew
+        const left = Math.ceil(this.barricade);
+        b.grp.children.forEach((plank, i) => { plank.visible = i < left; });
         b.grp.rotation.z = (this.maxBarricade - this.barricade) * 0.04;
-        void kids;
       }
     }
   }

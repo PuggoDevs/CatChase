@@ -311,7 +311,6 @@ const GEN = {
       out[i] = lp.p(noise()) * Math.exp(-t * 28) * 1.3 + Math.sin(2 * Math.PI * (70 - 60 * t) * t) * Math.exp(-t * 30) * 1.2;
       for (const c of [0.004, 0.019, 0.031]) if (t > c && t < c + 0.006) out[i] += hp.p(noise()) * 1.2;
     }
-    void v;
     return fadeEdges(normalize(distort(out, 1.4), 0.95));
   },
 

@@ -433,7 +433,6 @@ export class HouseGrid {
   /** Count occluders between two points for audio (walls, doors, floors). */
   occlusion(f1, ax, az, f2, bx, bz) {
     let walls = 0, doors = 0;
-    const f = Math.min(f1, f2);
     this.forEachCrossedEdge(f1, ax, az, bx, bz, (e) => {
       if (e.type === 'open' || e.type === 'arch' || e.type === 'railing') return true;
       if (e.door) {
@@ -445,7 +444,6 @@ export class HouseGrid {
       return true;
     });
     const floors = Math.abs(f1 - f2);
-    void f;
     return { walls, doors, floors };
   }
 

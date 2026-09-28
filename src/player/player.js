@@ -5,7 +5,6 @@ import { PLAYER, NOISE } from '../config.js';
 import { floorBaseY } from '../world/layout.js';
 import { noise1 } from '../core/rng.js';
 
-const UP = new THREE.Vector3(0, 1, 0);
 const tmpV = new THREE.Vector3();
 const tmpV2 = new THREE.Vector3();
 
@@ -502,4 +501,3 @@ export function lerpAngle(a, b, t) {
   return a + wrapAngle(b - a) * t;
 }
 
-void UP;
